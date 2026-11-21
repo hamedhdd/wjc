@@ -3,6 +3,16 @@
 All notable changes to this project are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.0] - 2026-11-21
+
+### Changed
+- **Unslop Visual Overhaul**:
+  - Restructured color system in `src/ui/theme.rs` to a single unified graphite neutral ramp with calibrated hairlines and high-contrast text roles.
+  - Eliminated decorative emoji clutter from tray menus (`نمایش تقویم`, `امروز`, `اجرای خودکار با ویندوز`, `درباره`, `خروج`), converter cards, and event lists.
+  - Replaced the calendar header theme toggle emoji (`☀️` / `🌙`) with clean, subtle Persian typography badges (`روز` / `شب`).
+  - Redesigned holiday indicators in the day cells into centered, restrained 4px circular status pips.
+  - Balanced typography weights across cells and headers for native Windows feel.
+
 ## [1.1.0] - 2026-11-21
 
 ### Added

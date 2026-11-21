@@ -665,14 +665,14 @@ unsafe fn paint_header(hdc: HDC, width: i32, pad: i32, state: &CalendarWindowSta
     };
     draw_btn(hdc, today_rect, "امروز", ButtonId::Today, true);
 
-    // Theme toggle button
+    // Theme toggle button: Clean text badge instead of emoji
     let mode_rect = RECT {
         left: r2.left - scale_for_dpi(32, dpi),
         top: btn_y,
         right: r2.left - scale_for_dpi(4, dpi),
         bottom: btn_y + btn_h,
     };
-    let mode_icon = if state.theme.is_dark { "☀️" } else { "🌙" };
+    let mode_icon = if state.theme.is_dark { "شب" } else { "روز" };
     draw_btn(hdc, mode_rect, mode_icon, ButtonId::ThemeToggle, false);
 
     // Title (Month & Year in Center)
@@ -945,16 +945,22 @@ unsafe fn paint_grid(
                 DT_RIGHT | DT_TOP | DT_SINGLELINE | DT_NOCLIP,
             );
 
-            // Holiday dot indicator
+            // Holiday indicator: subtle, centered 4px dot
             if cell.is_holiday {
                 let dot_brush = CreateSolidBrush(t.holiday_red);
+                let cx = (cell_rect.left + cell_rect.right) / 2;
+                let cy = cell_rect.bottom - scale_for_dpi(5, dpi);
                 let dot_rect = RECT {
-                    left: (cell_rect.left + cell_rect.right) / 2 - 2,
-                    top: cell_rect.bottom - 4,
-                    right: (cell_rect.left + cell_rect.right) / 2 + 2,
-                    bottom: cell_rect.bottom - 1,
+                    left: cx - 2,
+                    top: cy - 2,
+                    right: cx + 2,
+                    bottom: cy + 2,
                 };
-                FillRect(hdc, &dot_rect, dot_brush);
+                let old_b = SelectObject(hdc, dot_brush);
+                let old_p = SelectObject(hdc, windows::Win32::Graphics::Gdi::GetStockObject(windows::Win32::Graphics::Gdi::NULL_PEN));
+                let _ = RoundRect(hdc, dot_rect.left, dot_rect.top, dot_rect.right, dot_rect.bottom, 2, 2);
+                SelectObject(hdc, old_p);
+                SelectObject(hdc, old_b);
                 let _ = DeleteObject(dot_brush);
             }
         }
@@ -1109,7 +1115,7 @@ unsafe fn paint_day_details(
     if events.is_empty() {
         if is_friday {
             SetTextColor(hdc, t.holiday_red);
-            let mut ev_wide: Vec<u16> = "🔴 تعطیل پایان هفته (جمعه)".encode_utf16().collect();
+            let mut ev_wide: Vec<u16> = "تعطیل پایان هفته (جمعه)".encode_utf16().collect();
             let mut ev_rect = RECT {
                 left: card_rect.left + inner_pad,
                 top: line_y,
@@ -1141,9 +1147,9 @@ unsafe fn paint_day_details(
     } else {
         for ev in events.iter().take(2) {
             let prefix = if ev.is_holiday {
-                "🔴 [تعطیل رسمی] "
+                "تعطیل رسمی: "
             } else {
-                "⭐ "
+                "مناسبت: "
             };
             SetTextColor(
                 hdc,
@@ -1223,7 +1229,7 @@ unsafe fn paint_converter_view(
     SelectObject(hdc, font_title);
     SetTextColor(hdc, t.primary_light);
 
-    let mut title_wide: Vec<u16> = "🔄 تبدیل تاریخ سه‌گانه".encode_utf16().collect();
+    let mut title_wide: Vec<u16> = "تبدیل تاریخ سه‌گانه".encode_utf16().collect();
     let mut tr = RECT {
         left: pad,
         top: top + scale_for_dpi(10, dpi),
@@ -1245,12 +1251,12 @@ unsafe fn paint_converter_view(
     let l = LunarDate::from_gregorian(g);
 
     let lines = [
-        format!("📅 تاریخ خورشیدی (شمسی): {}", j.format_long_fa()),
-        format!("🌍 تاریخ میلادی (Gregorian): {}", g.format_long()),
-        format!("🌙 تاریخ قمری (Hijri): {}", l.format_long_fa()),
-        format!("📌 روز هفته: {}", j.weekday().name_fa()),
-        format!("🔢 عدد روز در سال: {} از ۳۶۵", if j.month <= 6 { (j.month - 1) * 31 + j.day } else { 186 + (j.month - 7) * 30 + j.day }),
-        format!("⏳ وضعیت سال: {}", if JalaliDate::is_leap_year(j.year) { "سال کبیسه (Leap Year)" } else { "سال عادی" }),
+        format!("تاریخ خورشیدی: {}", j.format_long_fa()),
+        format!("تاریخ میلادی: {}", g.format_long()),
+        format!("تاریخ قمری: {}", l.format_long_fa()),
+        format!("روز هفته: {}", j.weekday().name_fa()),
+        format!("شماره روز در سال: {} از ۳۶۵", if j.month <= 6 { (j.month - 1) * 31 + j.day } else { 186 + (j.month - 7) * 30 + j.day }),
+        format!("وضعیت سال: {}", if JalaliDate::is_leap_year(j.year) { "سال کبیسه" } else { "سال عادی" }),
     ];
 
     let mut y = top + scale_for_dpi(55, dpi);

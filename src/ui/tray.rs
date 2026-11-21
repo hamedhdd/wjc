@@ -354,16 +354,16 @@ impl TrayIcon {
                 let _ = InsertMenuItemW(hmenu, id, false, &item);
             };
 
-            add_item(IDM_SHOW_CALENDAR, "📅 نمایش تقویم (Show Calendar)", false, true);
-            add_item(IDM_TODAY, "🎯 رفتن به امروز (Go to Today)", false, false);
+            add_item(IDM_SHOW_CALENDAR, "نمایش تقویم (Show Calendar)", false, true);
+            add_item(IDM_TODAY, "امروز (Today)", false, false);
             add_item(
                 IDM_AUTOSTART,
-                "🚀 اجرا هنگام بالا آمدن ویندوز (Start with Windows)",
+                "اجرا هنگام بالا آمدن ویندوز (Start with Windows)",
                 autostart,
                 false,
             );
-            add_item(IDM_ABOUT, "ℹ️ درباره (About)", false, false);
-            add_item(IDM_EXIT, "❌ خروج (Exit)", false, false);
+            add_item(IDM_ABOUT, "درباره (About)", false, false);
+            add_item(IDM_EXIT, "خروج (Exit)", false, false);
 
             let mut pt = POINT::default();
             let _ = GetCursorPos(&mut pt);
