@@ -1,5 +1,8 @@
 # Project Codebase Map: Windows Jalali Calendar (`wjc`)
 
+- **GitHub Repository**: [https://github.com/hamedhdd/wjc](https://github.com/hamedhdd/wjc)
+- **Active Branch**: `main`
+
 ## 1. Directory Tree & Component Index
 
 ```
