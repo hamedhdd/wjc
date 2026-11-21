@@ -3,6 +3,11 @@
 All notable changes to this project are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.2.1] - 2026-11-21
+
+### Changed
+- Replaced the temporary text labels (`روز` / `شب`) for theme toggle with crisp DPI-scaled native GDI vector icons (Sun with 8 rays in dark mode, Crescent Moon in light mode) avoiding all emoji rendering issues.
+
 ## [1.2.0] - 2026-11-21
 
 ### Changed

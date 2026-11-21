@@ -5,8 +5,8 @@ use windows::core::{w, PCWSTR};
 use windows::Win32::Foundation::{COLORREF, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
     BeginPaint, CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreatePen,
-    CreateSolidBrush, DeleteDC, DeleteObject, DrawTextW, EndPaint, FillRect, FrameRect,
-    InvalidateRect, MoveToEx, PS_SOLID, RoundRect, SelectObject, SetBkMode, SetTextColor,
+    CreateSolidBrush, DeleteDC, DeleteObject, DrawTextW, Ellipse, EndPaint, FillRect, FrameRect,
+    InvalidateRect, MoveToEx, LineTo, PS_SOLID, RoundRect, SelectObject, SetBkMode, SetTextColor,
     DT_CENTER, DT_LEFT, DT_NOCLIP, DT_RIGHT, DT_SINGLELINE, DT_TOP, DT_VCENTER,
     DT_WORDBREAK, FW_BOLD, FW_NORMAL, FW_SEMIBOLD, HBRUSH, HDC, PAINTSTRUCT,
     TRANSPARENT,
@@ -665,15 +665,102 @@ unsafe fn paint_header(hdc: HDC, width: i32, pad: i32, state: &CalendarWindowSta
     };
     draw_btn(hdc, today_rect, "امروز", ButtonId::Today, true);
 
-    // Theme toggle button: Clean text badge instead of emoji
+    // Theme toggle button: Clean geometric vector icon (Sun/Moon)
     let mode_rect = RECT {
-        left: r2.left - scale_for_dpi(32, dpi),
+        left: r2.left - scale_for_dpi(30, dpi),
         top: btn_y,
         right: r2.left - scale_for_dpi(4, dpi),
         bottom: btn_y + btn_h,
     };
-    let mode_icon = if state.theme.is_dark { "شب" } else { "روز" };
-    draw_btn(hdc, mode_rect, mode_icon, ButtonId::ThemeToggle, false);
+    
+    // Draw button background & border for theme toggle
+    {
+        let is_hovered = state.hovered_button == Some(ButtonId::ThemeToggle);
+        let btn_bg = if is_hovered { t.surface_hover } else { t.surface };
+        let b_brush = CreateSolidBrush(btn_bg);
+        FillRect(hdc, &mode_rect, b_brush);
+        let _ = DeleteObject(b_brush);
+
+        let b_border = CreateSolidBrush(t.border);
+        FrameRect(hdc, &mode_rect, b_border);
+        let _ = DeleteObject(b_border);
+
+        // Vector icon rendering
+        let cx = (mode_rect.left + mode_rect.right) / 2;
+        let cy = (mode_rect.top + mode_rect.bottom) / 2;
+        let icon_color = if is_hovered { t.text_primary } else { t.text_secondary };
+
+        if state.theme.is_dark {
+            // Dark mode -> Draw elegant Sun icon (inviting switch to light mode)
+            let pen = CreatePen(PS_SOLID, 1, icon_color);
+            let brush = CreateSolidBrush(icon_color);
+            let old_p = SelectObject(hdc, pen);
+            let old_b = SelectObject(hdc, brush);
+
+            let r = scale_for_dpi(3, dpi);
+            let _ = Ellipse(hdc, cx - r, cy - r, cx + r + 1, cy + r + 1);
+
+            // Sun rays (8 directional rays)
+            let ray_in = scale_for_dpi(5, dpi);
+            let ray_out = scale_for_dpi(7, dpi);
+            let d_in = (ray_in as f32 * 0.7071) as i32;
+            let d_out = (ray_out as f32 * 0.7071) as i32;
+
+            let rays = [
+                (0, -ray_in, 0, -ray_out),
+                (0, ray_in, 0, ray_out),
+                (-ray_in, 0, -ray_out, 0),
+                (ray_in, 0, ray_out, 0),
+                (-d_in, -d_in, -d_out, -d_out),
+                (d_in, -d_in, d_out, -d_out),
+                (-d_in, d_in, -d_out, d_out),
+                (d_in, d_in, d_out, d_out),
+            ];
+
+            for (x1, y1, x2, y2) in rays {
+                let _ = MoveToEx(hdc, cx + x1, cy + y1, None);
+                let _ = LineTo(hdc, cx + x2, cy + y2);
+            }
+
+            SelectObject(hdc, old_b);
+            SelectObject(hdc, old_p);
+            let _ = DeleteObject(brush);
+            let _ = DeleteObject(pen);
+        } else {
+            // Light mode -> Draw clean Crescent Moon icon (inviting switch to dark mode)
+            let mr = scale_for_dpi(6, dpi);
+            let pen = CreatePen(PS_SOLID, 1, icon_color);
+            let brush = CreateSolidBrush(icon_color);
+            let old_p = SelectObject(hdc, pen);
+            let old_b = SelectObject(hdc, brush);
+
+            // Outer moon circle
+            let _ = Ellipse(hdc, cx - mr, cy - mr, cx + mr + 1, cy + mr + 1);
+
+            // Cutout circle using the button background to form crescent
+            let bg_pen = CreatePen(PS_SOLID, 1, btn_bg);
+            let bg_brush = CreateSolidBrush(btn_bg);
+            SelectObject(hdc, bg_pen);
+            SelectObject(hdc, bg_brush);
+
+            let cut_offset = scale_for_dpi(3, dpi);
+            let cut_r = scale_for_dpi(5, dpi);
+            let _ = Ellipse(
+                hdc,
+                cx - cut_r + cut_offset,
+                cy - cut_r - cut_offset,
+                cx + cut_r + cut_offset + 1,
+                cy + cut_r - cut_offset + 1,
+            );
+
+            SelectObject(hdc, old_b);
+            SelectObject(hdc, old_p);
+            let _ = DeleteObject(bg_brush);
+            let _ = DeleteObject(bg_pen);
+            let _ = DeleteObject(brush);
+            let _ = DeleteObject(pen);
+        }
+    }
 
     // Title (Month & Year in Center)
     let month_name = if state.viewing_month >= 1 && state.viewing_month <= 12 {
