@@ -192,7 +192,7 @@ mod tests {
             for delta in [-1i64, 1] {
                 let g = j.to_gregorian();
                 let jdn = super::super::hijri_table::gregorian_to_jdn(g.year, g.month, g.day) + delta;
-                let l = super::super::lunar::iran_hijri().date_of_jdn(jdn);
+                let l = super::super::lunar::with_iran_hijri(|cal| cal.date_of_jdn(jdn));
                 let mut evs = Vec::new();
                 lunar_events(&l, &mut evs);
                 let same_title = OFFICIAL.iter().any(|o| {

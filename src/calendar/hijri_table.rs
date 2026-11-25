@@ -4,24 +4,11 @@
 
 use std::collections::BTreeMap;
 
-use super::jalali::jalali_to_gregorian;
+pub use super::jalali::gregorian_to_jdn;
+use super::jalali::jalali_to_jdn;
 
 /// Day 1 of each listed Hijri month, as a Julian Day Number.
 pub type MonthStarts = BTreeMap<(i32, u32), i64>;
-
-/// Julian Day Number of a proleptic Gregorian date.
-pub fn gregorian_to_jdn(year: i32, month: u32, day: u32) -> i64 {
-    let (y, m, d) = (year as i64, month as i64, day as i64);
-    let a = (14 - m) / 12;
-    let y = y + 4800 - a;
-    let m = m + 12 * a - 3;
-    d + (153 * m + 2) / 5 + 365 * y + y / 4 - y / 100 + y / 400 - 32045
-}
-
-pub fn jalali_to_jdn(year: i32, month: u32, day: u32) -> i64 {
-    let (gy, gm, gd) = jalali_to_gregorian(year, month as i32, day as i32);
-    gregorian_to_jdn(gy, gm as u32, gd as u32)
-}
 
 fn parse_pair(s: &str) -> Option<(i32, u32)> {
     let (a, b) = s.split_once('/')?;
@@ -40,7 +27,7 @@ fn parse_line(line: &str) -> Option<((i32, u32), i64)> {
     let jm: u32 = date.next()?.parse().ok()?;
     let jd: u32 = date.next()?.parse().ok()?;
     let valid = (1..=12).contains(&hm) && (1..=12).contains(&jm) && (1..=31).contains(&jd);
-    valid.then(|| ((hy, hm), jalali_to_jdn(jy, jm, jd)))
+    valid.then(|| ((hy, hm), jalali_to_jdn(jy, jm as i32, jd as i32)))
 }
 
 /// Parses the table. Malformed lines are skipped.

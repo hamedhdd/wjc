@@ -2,88 +2,81 @@
 
 - **GitHub Repository**: [https://github.com/hamedhdd/wjc](https://github.com/hamedhdd/wjc)
 - **Active Branch**: `main`
+- **Version**: `1.4.0`
 
 ## 1. Directory Tree & Component Index
 
 ```
 c:\Users\Hamed\Desktop\Projects\wjc\
-├── Cargo.toml               # Cargo package configuration, dependencies, release profile
-├── app.manifest             # Windows Application Manifest (DPI awareness, Common Controls v6)
-├── build.rs                 # Win32 resource / manifest compilation build script
+├── Cargo.toml               # Cargo package configuration (v1.4.0), Win32 features, release profile
+├── app.manifest             # Windows Application Manifest (PerMonitorV2 DPI, Common Controls v6)
+├── app.ico                  # Embedded application icon resource
+├── build.rs                 # Win32 icon + manifest resource embedding via winres
 ├── README.md                # Comprehensive documentation in Persian & English
-├── CHANGELOG.md             # Standard Keep-a-Changelog record of project releases
+├── CHANGELOG.md             # Keep-a-Changelog release history
 ├── PROJECT_MAP.md           # Architecture map and codebase index (this file)
 ├── data/
 │   └── hijri_months.txt     # Official Iranian lunar month starts (Shawwal 1445 - Shawwal 1449)
 └── src/
-    ├── main.rs              # Win32 application entry point, single-instance mutex, main message loop
+    ├── main.rs              # Win32 daemon entry, single-instance handoff, TaskbarCreated/theme/time hooks
     ├── calendar/
     │   ├── mod.rs           # Module exports for calendar engine
-    │   ├── jalali.rs        # Jalali (Solar Hijri) <-> Gregorian conversions & weekday formatting
-    │   ├── astro.rs         # Astronomical Meeus conjunction & Tehran crescent visibility algorithms
-    │   ├── hijri_table.rs   # Parser for hijri_months.txt format and JDN coordinate mapping
-    │   ├── hijri_source.rs  # Embedded month-start loader + external file override discovery
-    │   ├── lunar.rs         # LunarDate struct, Iran-calibrated Hijri Calendar engine, OnceLock instance
-    │   ├── holidays.rs      # Solar & Lunar event definitions, holiday detection, official date tests
-    │   └── converter.rs     # FullDateInfo unified representation across 3 calendars
+    │   ├── jalali.rs        # Deduplicated Jalali <-> Gregorian <-> JDN engine, leap years, arithmetic
+    │   ├── astro.rs         # Meeus new moon conjunction & Tehran crescent visibility fallback
+    │   ├── hijri_table.rs   # Parser for hijri_months.txt format
+    │   ├── hijri_source.rs  # Embedded month-start loader + external hijri_months.txt override
+    │   ├── lunar.rs         # LunarDate, RwLock-backed reloadable HijriCalendar, estimate detection
+    │   ├── holidays.rs      # Fixed solar & Hijri lunar holiday/observance rules + verification tests
+    │   └── converter.rs     # FullDateInfo unified 3-calendar representation
     ├── ui/
     │   ├── mod.rs           # UI module exports
-    │   ├── theme.rs         # Dark / Light theme color palettes, brush caches, GDI colors
-    │   ├── tray.rs          # System tray icon (NOTIFYICONDATAW), dynamic icon rasterization, tooltips
-    │   └── calendar_window.rs# Modern popup calendar window (GDI double-buffering, RTL grid, event list)
+    │   ├── theme.rs         # Unified Graphite neutral ramp palettes (Dark & Light)
+    │   ├── gdi.rs           # RAII GDI wrappers, DPI-cached PopupFonts, crisp vector icon primitives
+    │   ├── tray.rs          # Native-DPI ARGB+1-bit mask tray icon renderer, styles, context menu
+    │   └── popup/
+    │       ├── mod.rs       # Popup window lifecycle, multi-monitor docking, mouse/keyboard/wheel events
+    │       ├── state.rs     # CalendarWindowState, cached month GridCell list, view & theme state
+    │       ├── layout.rs    # Single-source-of-truth 4px-grid geometry & hit-testing
+    │       └── paint.rs     # Double-buffered GDI renderer for header, grid, details card, converter view
     └── util/
-        ├── mod.rs           # Utility module exports
-        ├── autostart.rs     # Windows Registry Run key management (Start with Windows)
-        ├── dpi.rs           # Per-monitor DPI scaling utilities
-        ├── theme_detect.rs  # Windows registry taskbar theme detection (SystemUsesLightTheme)
-        └── time.rs          # Local time helpers and day change detection
+        ├── mod.rs           # Utility exports & SendHwnd wrapper
+        ├── autostart.rs     # Registry Run key management with exe path verification
+        ├── clipboard.rs     # Win32 UTF-16 clipboard copy helper
+        ├── dpi.rs           # Dynamic GetDpiForWindow (Win10+) with Win7/8 GetDeviceCaps fallback
+        ├── dwm.rs           # Dynamic Windows 11 DWM rounded corners (graceful Win7-10 no-op)
+        ├── settings.rs      # Persisted ThemePreference & TrayIconStyle (HKCU\Software\WJalaliCalendar)
+        ├── theme_detect.rs  # Windows taskbar (SystemUsesLightTheme) & app (AppsUseLightTheme) detection
+        └── time.rs          # Local system time helpers
 ```
 
-## 2. Data & Telemetry Flow
+## 2. Data & Event Flow
 
 ```
-[System Time (Local)]
+[Windows Local Time / WM_TIMECHANGE / WM_SETTINGCHANGE / TaskbarCreated]
        │
        ▼
-[GregorianDate] ──────► [JalaliDate] (Arithmetic conversion)
-       │                      │
-       │                      ▼
-       └──────────────► [iran_hijri() / LunarDate]
-                              │ (via official hijri_months.txt table or Meeus astro fallback)
-                              ▼
-                       [FullDateInfo]
-                              │
-          ┌───────────────────┴───────────────────┐
-          ▼                                       ▼
-  [Tray Icon Engine]                      [Calendar Popup UI]
-  - Dynamic GDI bitmap generation         - Double-buffered GDI rendering
-  - Persian digit tray text (e.g. 25/5)   - RTL 7x6 month day grid
-  - Red tint on holidays & Fridays        - Header navigation (prev/next month/year)
-  - Rich multiline tooltip                - Detail card with 3 calendar formats
-                                          - Iranian official events & holidays list
+[FullDateInfo] = (GregorianDate, JalaliDate, LunarDate)
+       │         └─ HijriCalendar (RwLock: embedded + hijri_months.txt override + Meeus astro)
+       │
+       ├─────────────────────────────┬─────────────────────────────────┐
+       ▼                             ▼                                 ▼
+[TrayIcon (src/ui/tray.rs)]   [PopupState (popup/state.rs)]    [Settings (util/settings.rs)]
+- Native SM_CXSMICON bitmap   - Cached 35/42 GridCell array    - HKCU\Software\WJalaliCalendar
+- 32-bit ARGB + 1-bit mask    - DPI-cached PopupFonts          - ThemePreference & TrayIconStyle
+- Auto / MonthDay / Numeric   - Unified PopupLayout rects
+- Dark & Light taskbar ramps  - Double-buffered GDI paint
+- Explorer restart recovery   - Multi-monitor rcWork docking
 ```
 
 ## 3. Architecture & SOLID Principles Adherence
 
-- **Single Responsibility Principle (SRP)**:
-  - `calendar/astro.rs`: Solely responsible for astronomical calculations (Meeus algorithm, sunset, crescent age).
-  - `calendar/hijri_table.rs`: Only parses and validates month-start definitions.
-  - `calendar/hijri_source.rs`: Responsible for file discovery and fallback between embedded data and user override.
-  - `calendar/holidays.rs`: Encapsulates holiday rules without hardcoding yearly date shifts.
-  - `ui/tray.rs` vs `ui/calendar_window.rs`: Separates system notification area presence from full calendar view.
-- **Open/Closed Principle (OCP)**:
-  - New years of lunar holidays (1407+) can be added simply by dropping a `hijri_months.txt` next to the executable without changing or recompiling any Rust code.
-- **Liskov Substitution & Dependency Inversion**:
-  - The calendar lookup operates on abstract date models (`JalaliDate`, `LunarDate`), cleanly decoupled from UI and OS subsystems.
+- **Single Responsibility Principle (SRP)**: Calendar math (`jalali`, `astro`, `hijri_table`, `hijri_source`, `lunar`, `holidays`), Windows OS integrations (`autostart`, `clipboard`, `dpi`, `dwm`, `settings`, `theme_detect`), GDI resource ownership (`ui/gdi.rs`), tray rendering (`ui/tray.rs`), and popup state/layout/paint/windowing (`ui/popup/*`) each live in focused modules.
+- **Open/Closed Principle (OCP)**: Future Hijri years (1407+) are added via `hijri_months.txt` next to `wjc.exe` and reloaded live from the tray menu without recompiling.
+- **Dependency Inversion & Safety**: Optional Win10/11 APIs (`GetDpiForWindow`, `DwmSetWindowAttribute`) are resolved dynamically so the binary runs natively on Windows 7 through Windows 11; RAII GDI wrappers prevent resource leaks.
 
-## 4. UI Layout & View Elements
+## 4. UI Layout & Controls
 
-- **Tray Area**:
-  - Dynamic `16x16` or `32x32` generated icon based on monitor DPI.
-  - Tray Context Menu: "امروز" (Go to today), "اجرای خودکار با ویندوز" (Toggle Autostart), "درباره" (About), "خروج" (Exit).
-- **Calendar Popup Window**:
-  - **Header**: Navigation buttons (⟨, ⟩, «, »), current month and year title in Persian.
-  - **Weekday Bar**: شنبه to جمعه with customized header styling.
-  - **Grid Area**: Up to 42 cells representing the active month + leading/trailing days.
-  - **Event Panel**: Daily events list, with holidays accented in red.
-  - **Today Footer Bar**: Quick jump button returning to current day.
+- **Tray Context Menu**: Show Calendar (default), Today, Tray Style submenu (Auto / Month+Day / Numeric), Reload Holidays, Start with Windows, About, Exit.
+- **Popup Header**: RTL Prev/Next Month & Year vector chevrons, Today button, Converter/Calendar view toggle icon, Sun/Moon theme toggle icon, centered Persian Month + Year title.
+- **Calendar View**: 7-column RTL weekday bar, cached 5–6 row day grid (Jalali + Gregorian + Hijri + holiday pip), details card with Copy button (`Ctrl+C`), wrapped event list, and astronomical estimate tag when beyond official table.
+- **Converter / Details View**: 6 clickable cards (Jalali, Gregorian, Hijri, Weekday, Day of Year / 365–366, Leap Year status) — click any card to copy to clipboard.

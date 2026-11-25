@@ -1,5 +1,8 @@
 pub mod autostart;
+pub mod clipboard;
 pub mod dpi;
+pub mod dwm;
+pub mod settings;
 pub mod theme_detect;
 pub mod time;
 

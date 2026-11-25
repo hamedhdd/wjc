@@ -3,7 +3,7 @@
 //! Month starts come from the official table (`hijri_source`), and fall back to
 //! the astronomical estimate in `astro` for months the table doesn't cover.
 
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 
 use super::astro::{estimated_month_start, hijri_of_lunation, lunation_of};
 use super::hijri_source::load_month_starts;
@@ -52,6 +52,11 @@ impl HijriCalendar {
         Self { starts }
     }
 
+    /// True if the month start is backed by the loaded table (official or override).
+    pub fn is_tabled_month(&self, year: i32, month: u32) -> bool {
+        self.starts.contains_key(&(year, month))
+    }
+
     fn start_of_lunation(&self, k: i64) -> i64 {
         let key = hijri_of_lunation(k);
         self.starts
@@ -81,10 +86,23 @@ impl HijriCalendar {
     }
 }
 
-/// The process-wide calendar, loaded once on first use.
-pub fn iran_hijri() -> &'static HijriCalendar {
-    static CALENDAR: OnceLock<HijriCalendar> = OnceLock::new();
-    CALENDAR.get_or_init(|| HijriCalendar::new(load_month_starts()))
+fn calendar_lock() -> &'static RwLock<HijriCalendar> {
+    static CALENDAR: OnceLock<RwLock<HijriCalendar>> = OnceLock::new();
+    CALENDAR.get_or_init(|| RwLock::new(HijriCalendar::new(load_month_starts())))
+}
+
+/// Reloads `hijri_months.txt` from disk (merged over embedded data) at runtime.
+pub fn reload_iran_hijri() {
+    let fresh = HijriCalendar::new(load_month_starts());
+    if let Ok(mut guard) = calendar_lock().write() {
+        *guard = fresh;
+    }
+}
+
+/// Runs a read-only closure against the active Hijri calendar.
+pub fn with_iran_hijri<R>(f: impl FnOnce(&HijriCalendar) -> R) -> R {
+    let guard = calendar_lock().read().unwrap();
+    f(&guard)
 }
 
 impl LunarDate {
@@ -102,12 +120,18 @@ impl LunarDate {
 
     /// Converts a Gregorian date to the Hijri date observed in Iran.
     pub fn from_gregorian(g: GregorianDate) -> Self {
-        iran_hijri().date_of_jdn(gregorian_to_jdn(g.year, g.month, g.day))
+        let jdn = gregorian_to_jdn(g.year, g.month, g.day);
+        with_iran_hijri(|cal| cal.date_of_jdn(jdn))
     }
 
     /// True if this is the last day of its month (e.g. 29 or 30 Safar).
     pub fn is_last_day_of_month(&self) -> bool {
-        self.day == iran_hijri().month_length(self.year, self.month)
+        with_iran_hijri(|cal| self.day == cal.month_length(self.year, self.month))
+    }
+
+    /// True if this Hijri month is outside the loaded table (astronomical estimate).
+    pub fn is_estimated(&self) -> bool {
+        with_iran_hijri(|cal| !cal.is_tabled_month(self.year, self.month))
     }
 
     pub fn format_long_fa(&self) -> String {

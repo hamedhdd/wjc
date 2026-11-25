@@ -3,6 +3,30 @@
 All notable changes to this project are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.4.0] - 2026-11-25
+
+### Added
+- **Selectable Tray Icon Styles** persisted in Registry (`HKCU\Software\WJalaliCalendar`): Auto (large crisp day at 16px, month + day at 20px+), Always Month+Day, and Numeric (`۲۵/۵`).
+- **Explorer Restart Recovery**: Registered `TaskbarCreated` message so the tray icon automatically reappears if `explorer.exe` restarts.
+- **Instant System Sync**: Added `WM_SETTINGCHANGE` and `WM_TIMECHANGE` handlers for immediate Light/Dark theme and system clock updates.
+- **Live Holiday Reload**: Context menu option to reload `hijri_months.txt` without restarting (`RwLock`-backed Hijri calendar).
+- **Rich Popup Navigation & Clipboard**: Mouse wheel month scrolling, RTL arrow keys (`Left`/`Right`/`Up`/`Down`), clickable leading/trailing month cells, wired Converter/Details view toggle button, click-to-copy rows & `Ctrl+C` shortcut, and Windows 11 native DWM rounded corners (with graceful Win7–10 fallback).
+- **Astronomical Estimate Indicator**: Displays `(تقریبی)` next to Hijri dates outside the official verified table.
+
+### Changed
+- **Modular SOLID UI Architecture**: Split the 1,474-line `calendar_window.rs` monolith into `src/ui/gdi.rs` (RAII GDI handles + DPI-cached fonts + vector icons) and `src/ui/popup/{mod,state,layout,paint}.rs` with cached month grids and unified paint/hit-test layout geometry.
+- **Pixel-Exact Tray Icon Engine**: Renders directly at native `SM_CXSMICON` with negative em-height bold `Tahoma`, explicit 32-bit premultiplied alpha fixup, genuine 1-bit monochrome mask (`CreateBitmap`), and high-contrast palettes for Dark & Light taskbars.
+- **Second Instance Behavior**: Launching a second instance now opens the existing calendar popup instead of showing a modal dialog.
+- **Unified Jalali Core & Version Sync**: Deduplicated Borkowski/Behdad calendar logic with full boundary leap-year handling, shared `gregorian_to_jdn`, synced `Cargo.toml` / `app.manifest` / About dialog to `1.4.0`, and fixed all `cargo clippy` errors & warnings.
+
+### Fixed
+- Tray icon downscale blur at 100% DPI (16×16), invalid 32-bit mask bitmap, and zeroed GDI DIB alpha channel.
+- Clicking the tray icon while the popup is open now cleanly closes it (220ms focus-loss debounce) instead of flickering and re-opening.
+- Multi-monitor docking (`MonitorFromPoint` + `GetMonitorInfoW`) and live per-monitor DPI updates (`GetDpiForWindow` + `WM_DPICHANGED`).
+- Stuck hover highlights when cursor exits the popup (`TrackMouseEvent` + `WM_MOUSELEAVE`).
+- Header theme button hit-test offset mismatch and converter leap-year day count (`366` vs `365` with Persian digits).
+- `is_autostart_enabled()` now verifies that the registered Run path actually matches the current executable path.
+
 ## [1.3.0] - 2026-11-25
 
 ### Added

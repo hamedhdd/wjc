@@ -1,23 +1,19 @@
 //! Windows System Theme Detection Helpers
 
-use windows::core::w;
+use windows::core::{w, PCWSTR};
 use windows::Win32::System::Registry::{
     RegCloseKey, RegOpenKeyExW, RegQueryValueExW, HKEY, HKEY_CURRENT_USER, KEY_READ,
     REG_DWORD, REG_VALUE_TYPE,
 };
 
-/// Returns true if Windows system taskbar/tray uses light theme.
-/// Checks `HKCU\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize\SystemUsesLightTheme`.
-/// If the key does not exist (e.g. Windows 7/8/early 10), defaults to false (dark taskbar).
-pub fn is_windows_system_light_theme() -> bool {
+fn read_personalize_dword(value_name: PCWSTR) -> Option<u32> {
     unsafe {
         let subkey = w!("Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize");
         let mut hkey = HKEY::default();
         if RegOpenKeyExW(HKEY_CURRENT_USER, subkey, 0, KEY_READ, &mut hkey).is_err() {
-            return false;
+            return None;
         }
 
-        let value_name = w!("SystemUsesLightTheme");
         let mut value_type = REG_VALUE_TYPE(0);
         let mut data: u32 = 0;
         let mut data_len = std::mem::size_of::<u32>() as u32;
@@ -34,9 +30,20 @@ pub fn is_windows_system_light_theme() -> bool {
         let _ = RegCloseKey(hkey);
 
         if status.is_ok() && value_type == REG_DWORD {
-            data == 1
+            Some(data)
         } else {
-            false
+            None
         }
     }
+}
+
+/// Returns true if Windows system taskbar/tray uses light theme.
+/// Defaults to false (dark taskbar) on Windows 7/8/early 10 where the key is absent.
+pub fn is_windows_system_light_theme() -> bool {
+    read_personalize_dword(w!("SystemUsesLightTheme")) == Some(1)
+}
+
+/// Returns true if Windows apps prefer light theme (`AppsUseLightTheme`).
+pub fn is_windows_apps_light_theme() -> bool {
+    read_personalize_dword(w!("AppsUseLightTheme")) == Some(1)
 }
