@@ -3,6 +3,20 @@
 All notable changes to this project are documented here, following
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [1.3.0] - 2026-11-25
+
+### Added
+- Dynamic Windows system taskbar theme detection (`src/util/theme_detect.rs`) checking `HKCU\...\Themes\Personalize\SystemUsesLightTheme`.
+
+### Changed
+- **Enhanced System Tray Icon Readability & Multi-Theme Compatibility**:
+  - Significantly enlarged Persian month name typography and day numbers.
+  - Full adaptive color palette support:
+    - **Windows Light Taskbar**: Pure white calendar badge with high-contrast outline border, dark neutral header band, and deep rich charcoal day digits.
+    - **Windows Dark Taskbar**: Graphite slate body with clean hairline border and bright white day digits.
+    - **Official Holidays / Fridays**: Distinct carmine red header band with tinted body and high-contrast red numerals.
+  - Automatic icon refresh on periodic date check whenever the user switches Windows theme between light and dark.
+
 ## [1.2.1] - 2026-11-21
 
 ### Changed

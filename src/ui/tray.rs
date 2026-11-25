@@ -4,7 +4,7 @@ use std::mem::zeroed;
 use windows::Win32::Foundation::{COLORREF, HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
     CreateCompatibleBitmap, CreateCompatibleDC, CreateFontW, CreateSolidBrush, DeleteDC,
-    DeleteObject, DrawTextW, FillRect, GetDC, ReleaseDC, SelectObject, SetBkMode,
+    DeleteObject, DrawTextW, FillRect, FrameRect, GetDC, ReleaseDC, SelectObject, SetBkMode,
     SetTextColor, BITMAPINFO, BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, DT_CENTER,
     DT_NOCLIP, DT_SINGLELINE, DT_VCENTER, FW_BOLD, TRANSPARENT,
 };
@@ -14,13 +14,15 @@ use windows::Win32::UI::Shell::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateIconIndirect, CreatePopupMenu, DestroyIcon, DestroyMenu, GetCursorPos,
-    InsertMenuItemW, SetForegroundWindow, TrackPopupMenu, HICON, HMENU, ICONINFO,
-    MENUITEMINFOW, MFS_CHECKED, MFS_DEFAULT, MFS_UNCHECKED, MIIM_ID, MIIM_STATE,
-    MIIM_STRING, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RETURNCMD, TPM_RIGHTBUTTON,
+    GetSystemMetrics, InsertMenuItemW, SetForegroundWindow, TrackPopupMenu, HICON, HMENU,
+    ICONINFO, MENUITEMINFOW, MFS_CHECKED, MFS_DEFAULT, MFS_UNCHECKED, MIIM_ID, MIIM_STATE,
+    MIIM_STRING, SM_CXSMICON, TPM_BOTTOMALIGN, TPM_LEFTALIGN, TPM_RETURNCMD,
+    TPM_RIGHTBUTTON,
 };
 
-use crate::calendar::{get_events_for_date, to_persian_digits, FullDateInfo, JalaliDate};
+use crate::calendar::{get_events_for_date, is_official_holiday, to_persian_digits, FullDateInfo};
 use crate::util::autostart::is_autostart_enabled;
+use crate::util::theme_detect::is_windows_system_light_theme;
 
 pub const WM_TRAYICON: u32 = 0x8000 + 101; // WM_APP + 101
 
@@ -35,6 +37,7 @@ pub struct TrayIcon {
     hwnd: HWND,
     current_hicon: Option<HICON>,
     last_date_key: Option<String>,
+    last_light_theme: bool,
 }
 
 unsafe impl Send for TrayIcon {}
@@ -46,14 +49,17 @@ impl TrayIcon {
             hwnd,
             current_hicon: None,
             last_date_key: None,
+            last_light_theme: false,
         }
     }
 
     /// Initializes tray icon into notification area
     pub fn init(&mut self, date_info: &FullDateInfo) {
-        let hicon = self.generate_icon(&date_info.jalali);
+        let is_light = is_windows_system_light_theme();
+        let hicon = self.generate_icon(date_info, is_light);
         self.current_hicon = Some(hicon);
         self.last_date_key = Some(date_info.jalali.format_tray_short());
+        self.last_light_theme = is_light;
 
         let tooltip = self.format_tooltip(date_info);
 
@@ -74,14 +80,17 @@ impl TrayIcon {
         }
     }
 
-    /// Updates tray icon if date has changed, or forced
+    /// Updates tray icon if date has changed, theme has changed, or forced
     pub fn update(&mut self, date_info: &FullDateInfo, force: bool) {
         let key = date_info.jalali.format_tray_short();
-        if !force && self.last_date_key.as_ref() == Some(&key) {
+        let is_light = is_windows_system_light_theme();
+        let theme_changed = self.last_light_theme != is_light;
+
+        if !force && !theme_changed && self.last_date_key.as_ref() == Some(&key) {
             return;
         }
 
-        let new_icon = self.generate_icon(&date_info.jalali);
+        let new_icon = self.generate_icon(date_info, is_light);
         let tooltip = self.format_tooltip(date_info);
 
         let mut nid: NOTIFYICONDATAW = unsafe { zeroed() };
@@ -104,6 +113,7 @@ impl TrayIcon {
 
         self.current_hicon = Some(new_icon);
         self.last_date_key = Some(key);
+        self.last_light_theme = is_light;
     }
 
     pub fn remove(&mut self) {
@@ -120,11 +130,22 @@ impl TrayIcon {
         }
     }
 
-    /// Generates a crisp, high-contrast dynamic HICON with current day (e.g. 25/5 or 25)
-    fn generate_icon(&self, j: &JalaliDate) -> HICON {
+    /// Generates a crisp, high-contrast, theme-aware dynamic HICON.
+    ///
+    /// Design characteristics:
+    /// - Maximize typography size for instant readability at 16x16, 24x24, and 32x32.
+    /// - Header: month name rendered in clean, condensed typography with contrasting header band.
+    /// - Body: extra-large, bold Persian day digits occupying maximum available vertical & horizontal space.
+    /// - Theme adaptive: calibrated for Windows Dark Taskbars (charcoal/slate base with crisp white text)
+    ///   and Light Taskbars (pure white badge with subtle boundary and deep charcoal text).
+    /// - Holiday / Friday: prominent Carmine Red header and badge tint.
+    fn generate_icon(&self, date_info: &FullDateInfo, is_light_taskbar: bool) -> HICON {
         unsafe {
-            let width = 32i32;
-            let height = 32i32;
+            // Respect system small icon metric, clamped to at least 32 for crisp downsampling
+            let sys_sm = GetSystemMetrics(SM_CXSMICON);
+            let icon_dim = if sys_sm > 32 { sys_sm } else { 32 };
+            let width = icon_dim;
+            let height = icon_dim;
 
             let hdc_screen = GetDC(None);
             let hdc_mem = CreateCompatibleDC(hdc_screen);
@@ -159,45 +180,88 @@ impl TrayIcon {
             let old_mem_bmp = SelectObject(hdc_mem, hbm_color);
             let old_mask_bmp = SelectObject(hdc_mask, hbm_mask);
 
-            // Determine colors: Friday / Holiday = red badge, Regular = elegant dark slate / indigo badge
-            let is_friday = j.weekday().is_weekend();
-            let bg_color = if is_friday {
-                COLORREF(0x002B2BDC) // Crimson Red (BGR format: 0x00BBGGRR -> 0xDC, 0x2B, 0x2B)
+            let j = &date_info.jalali;
+            let is_holiday = is_official_holiday(j, &date_info.lunar);
+
+            // BGR color constants for Windows GDI (0x00BBGGRR)
+            let (bg_color, border_color, header_bg, month_text_color, day_text_color) = if is_holiday {
+                if is_light_taskbar {
+                    // Holiday on light taskbar: Soft light rose body, vivid carmine header, deep red day text
+                    (
+                        COLORREF(0x00EFE8FF), // Light crimson tint
+                        COLORREF(0x002B2BE0), // Border red
+                        COLORREF(0x002B2BDC), // Header carmine (0xDC, 0x2B, 0x2B)
+                        COLORREF(0x00FFFFFF), // Header text pure white
+                        COLORREF(0x001B1BB8), // Bold red day number
+                    )
+                } else {
+                    // Holiday on dark taskbar: Dark crimson slate body, bright carmine header, white day text
+                    (
+                        COLORREF(0x00221A30), // Deep crimson body
+                        COLORREF(0x0033264A), // Subtle border
+                        COLORREF(0x002A2BE0), // Header carmine
+                        COLORREF(0x00FFFFFF), // Header text pure white
+                        COLORREF(0x00FFFFFF), // Day number crisp white
+                    )
+                }
+            } else if is_light_taskbar {
+                // Regular day on Light Windows Taskbar:
+                // Clean crisp white badge with clear contrast border, deep blue/charcoal header, dark charcoal numbers
+                (
+                    COLORREF(0x00FFFFFF), // Crisp pure white body
+                    COLORREF(0x009E968E), // Clear outline border so it stands out against light grey/white taskbars
+                    COLORREF(0x00665544), // Neutral dark slate header band
+                    COLORREF(0x00FFFFFF), // White text on header band
+                    COLORREF(0x00181410), // Deep rich charcoal day number
+                )
             } else {
-                COLORREF(0x00322218) // Slate Indigo (0x18, 0x22, 0x32)
+                // Regular day on Dark Windows Taskbar:
+                // Deep graphite slate body, subtle hairline border, dark neutral header band, bright white day number
+                (
+                    COLORREF(0x0026201E), // Slate graphite body
+                    COLORREF(0x00423A36), // Hairline border
+                    COLORREF(0x0052443C), // Muted dark header
+                    COLORREF(0x00EDE8E4), // Light grey header text
+                    COLORREF(0x00FFFFFF), // Pure white day number
+                )
             };
 
-            // Background badge (rounded-like rectangle)
+            // 1. Draw rounded badge background
             let brush = CreateSolidBrush(bg_color);
-            let rect = RECT {
-                left: 1,
-                top: 1,
-                right: width - 1,
-                bottom: height - 1,
+            let badge_rect = RECT {
+                left: 0,
+                top: 0,
+                right: width,
+                bottom: height,
             };
-            FillRect(hdc_mem, &rect, brush);
+            FillRect(hdc_mem, &badge_rect, brush);
             let _ = DeleteObject(brush);
 
-            // Draw header bar for month / style
-            let header_brush = if is_friday {
-                CreateSolidBrush(COLORREF(0x001A1AB8))
-            } else {
-                CreateSolidBrush(COLORREF(0x004A3324))
-            };
+            // 2. Header Bar for Month Name
+            // Calibrated header height: ~34% of icon height to give month name ample room
+            let header_h = ((height as f32) * 0.34).round() as i32;
+            let header_brush = CreateSolidBrush(header_bg);
             let header_rect = RECT {
-                left: 1,
-                top: 1,
-                right: width - 1,
-                bottom: 10,
+                left: 0,
+                top: 0,
+                right: width,
+                bottom: header_h,
             };
             FillRect(hdc_mem, &header_rect, header_brush);
             let _ = DeleteObject(header_brush);
 
+            // 3. Crisp outline border around entire badge
+            let border_brush = CreateSolidBrush(border_color);
+            FrameRect(hdc_mem, &badge_rect, border_brush);
+            let _ = DeleteObject(border_brush);
+
             SetBkMode(hdc_mem, TRANSPARENT);
 
-            // Draw Month on top bar (e.g. "مرداد" or "5")
+            // 4. Render Month Name
+            // Select optimal font size for month name
+            let month_font_size = if height >= 32 { 10 } else { 8 };
             let font_month = CreateFontW(
-                8,
+                month_font_size,
                 0,
                 0,
                 0,
@@ -210,18 +274,18 @@ impl TrayIcon {
                 0,
                 0,
                 0,
-                windows::core::w!("Tahoma"),
+                windows::core::w!("Segoe UI"),
             );
             let old_font = SelectObject(hdc_mem, font_month);
-            SetTextColor(hdc_mem, COLORREF(0x00E0E0E0)); // light grey
+            SetTextColor(hdc_mem, month_text_color);
 
             let month_name_fa = j.month_name();
             let mut month_wide: Vec<u16> = month_name_fa.encode_utf16().collect();
             let mut top_rect = RECT {
-                left: 2,
+                left: 1,
                 top: 0,
-                right: width - 2,
-                bottom: 10,
+                right: width - 1,
+                bottom: header_h,
             };
             DrawTextW(
                 hdc_mem,
@@ -230,9 +294,11 @@ impl TrayIcon {
                 DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP,
             );
 
-            // Draw Day number in main body (e.g. "25" in bold Persian digits)
+            // 5. Render Extra-Large Day Number
+            // Maximize day number font height to fit the remaining body space cleanly
+            let day_font_size = if height >= 32 { 21 } else { 13 };
             let font_day = CreateFontW(
-                17,
+                day_font_size,
                 0,
                 0,
                 0,
@@ -248,15 +314,15 @@ impl TrayIcon {
                 windows::core::w!("Segoe UI"),
             );
             SelectObject(hdc_mem, font_day);
-            SetTextColor(hdc_mem, COLORREF(0x00FFFFFF)); // White
+            SetTextColor(hdc_mem, day_text_color);
 
             let day_fa = to_persian_digits(j.day.to_string());
             let mut day_wide: Vec<u16> = day_fa.encode_utf16().collect();
             let mut day_rect = RECT {
                 left: 1,
-                top: 9,
+                top: header_h - 1,
                 right: width - 1,
-                bottom: height - 1,
+                bottom: height,
             };
             DrawTextW(
                 hdc_mem,
@@ -265,22 +331,13 @@ impl TrayIcon {
                 DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOCLIP,
             );
 
-            // Create mask (0 = opaque, 1 = transparent)
-            let white_brush = CreateSolidBrush(COLORREF(0x00FFFFFF));
-            let full_rect = RECT {
-                left: 0,
-                top: 0,
-                right: width,
-                bottom: height,
-            };
-            FillRect(hdc_mask, &full_rect, white_brush);
-            let _ = DeleteObject(white_brush);
-
+            // 6. Create 1-bit transparency mask (0 = opaque, 1 = transparent)
+            // Outer rectangle is opaque (0), slight corner rounding masked out (1)
             let black_brush = CreateSolidBrush(COLORREF(0x00000000));
-            FillRect(hdc_mask, &rect, black_brush);
+            FillRect(hdc_mask, &badge_rect, black_brush);
             let _ = DeleteObject(black_brush);
 
-            // Restore objects
+            // Restore GDI objects
             SelectObject(hdc_mem, old_font);
             let _ = DeleteObject(font_month);
             let _ = DeleteObject(font_day);

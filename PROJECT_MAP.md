@@ -35,6 +35,7 @@ c:\Users\Hamed\Desktop\Projects\wjc\
         ├── mod.rs           # Utility module exports
         ├── autostart.rs     # Windows Registry Run key management (Start with Windows)
         ├── dpi.rs           # Per-monitor DPI scaling utilities
+        ├── theme_detect.rs  # Windows registry taskbar theme detection (SystemUsesLightTheme)
         └── time.rs          # Local time helpers and day change detection
 ```
 

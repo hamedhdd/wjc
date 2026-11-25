@@ -1,5 +1,6 @@
 pub mod autostart;
 pub mod dpi;
+pub mod theme_detect;
 pub mod time;
 
 use windows::Win32::Foundation::HWND;
